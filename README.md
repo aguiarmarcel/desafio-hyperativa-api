@@ -1,47 +1,43 @@
-Segue o README atualizado com a inclusão das três rotas da API, mantendo o tom técnico, direto e justificando decisões arquiteturais:
+Here’s the full English translation of your README, keeping it technical, concise, and justifying architectural decisions:
 
 ---
 
 # Hyperativa API – Card Import & Lookup
 
-API para importação em lote de cartões e consulta por PAN, com foco em:
+API for batch card import and PAN lookup, focusing on:
 
-* Idempotência real
-* Proteção contra duplicidade
-* Alta performance de escrita
-* Lookup eficiente
-* Armazenamento seguro (hash + criptografia)
-
----
-
-## 📌 Arquitetura
-
-Arquitetura baseada em separação de responsabilidades:
-
-* **Controller** → camada HTTP
-* **UseCase** → regra de negócio
-* **Repository** → persistência
-* **CryptoService** → isolamento de criptografia
-* **Banco** → responsável por garantir unicidade
-
-Essa separação permite:
-
-* Testabilidade
-* Evolução independente
-* Baixo acoplamento
-* Escalabilidade
+* True idempotency
+* Duplicate protection
+* High write performance
+* Efficient lookup
+* Secure storage (hash + encryption)
 
 ---
 
-Perfeito! Com base nos seus controllers, dá para criar um **diagrama simples de fluxo** mostrando as rotas e seus fluxos de importação, criação e consulta de cartões, além do login. Vou sugerir um diagrama ASCII técnico e direto, que pode ser colocado no README, mantendo o estilo limpo e explicativo:
+## 📌 Architecture
+
+Architecture based on separation of responsibilities:
+
+* **Controller** → HTTP layer
+* **UseCase** → business logic
+* **Repository** → persistence
+* **CryptoService** → cryptography isolation
+* **Database** → responsible for ensuring uniqueness
+
+This separation enables:
+
+* Testability
+* Independent evolution
+* Low coupling
+* Scalability
 
 ---
 
-## 🗂 Fluxo de Rotas – Hyperativa API
+## 🗂 API Route Flow – Hyperativa API
 
 ```text
            ┌─────────────┐
-           │   Cliente   │
+           │   Client    │
            └─────┬───────┘
                  │
                  │ POST /auth
@@ -51,17 +47,17 @@ Perfeito! Com base nos seus controllers, dá para criar um **diagrama simples de
            │ AuthController │
            └─────┬───────┘
                  │
-                 │ retorna JWT
+                 │ returns JWT
                  ▼
            ┌─────────────┐
-           │  Cliente   │ (usa token)
+           │  Client    │ (uses token)
            └─────┬───────┘
                  │
       ┌──────────┴───────────┐
       │                      │
       ▼                      ▼
 POST /cards               GET /cards?pan=...
-{ "pan": "..."}           Retorna ID se existir
+{ "pan": "..."}           Returns ID if exists
       │                      │
       ▼                      ▼
 ┌─────────────┐          ┌─────────────┐
@@ -70,48 +66,48 @@ POST /cards               GET /cards?pan=...
       │
       │
       ▼
-RegisterCardUseCase  ← cria cartão
-LookupCardUseCase    ← consulta cartão
-ImportCardsUseCase   ← processa arquivo CSV/JSON
+RegisterCardUseCase  ← creates card
+LookupCardUseCase    ← looks up card
+ImportCardsUseCase   ← processes CSV/JSON file
       │
       ▼
 ┌─────────────┐
 │ CardRepository │
-│ Banco (MySQL) │
+│ Database (MySQL) │
 └─────────────┘
       │
-      ├── hash+encrypt PAN
-      ├── UNIQUE pan_hash garante idempotência
-      └── batch insert / lookup rápido
+      ├── hash + encrypt PAN
+      ├── UNIQUE pan_hash ensures idempotency
+      └── batch insert / fast lookup
 ```
 
 ---
 
-### Como o fluxo funciona:
+### How the flow works:
 
-1. **Autenticação (`POST /auth`)**
+1. **Authentication (`POST /auth`)**
 
-    * Retorna JWT usado para todas as outras rotas.
+    * Returns JWT used for all other routes
 
-2. **Criar cartão (`POST /cards`)**
+2. **Create Card (`POST /cards`)**
 
-    * Recebe PAN → hash + encrypt → salva banco
-    * Idempotente → evita duplicata
+    * Receives PAN → hash + encrypt → stores in database
+    * Idempotent → prevents duplicates
 
-3. **Consultar cartão (`GET /cards?pan=...`)**
+3. **Lookup Card (`GET /cards?pan=...`)**
 
-    * Busca por `pan_hash`
-    * Retorna `id` sem expor PAN
+    * Searches by `pan_hash`
+    * Returns `id` without exposing PAN
 
-4. **Importar cartões (`POST /cards/import`)**
+4. **Import Cards (`POST /cards/import`)**
 
-    * Recebe arquivo CSV/JSON → streaming e batch insert
-    * Banco garante unicidade → idempotência real
-    * Retorna resumo (inseridos, duplicados, inválidos)
+    * Receives CSV/JSON file → streaming + batch insert
+    * Database ensures uniqueness → true idempotency
+    * Returns summary (inserted, duplicates, invalid)
 
 ---
 
-## 🔐 Modelo de Persistência
+## 🔐 Persistence Model
 
 ```sql
 CREATE TABLE card (
@@ -125,97 +121,97 @@ CREATE TABLE card (
 );
 ```
 
-**Decisões:**
+**Decisions:**
 
-* **id binary(16)** → UUID compacto, melhor performance que varchar(36), índice menor → menos IO
-* **pan_hash binary(32)** → SHA-256, usado como chave lógica, permite comparação segura sem expor PAN
-* **pan_enc varbinary** → armazena PAN criptografado (AES-GCM), garante confidencialidade, possibilidade de descriptografia futura
-* **pan_iv** → necessário para criptografia autenticada (AES-GCM), segurança correta por registro
-
----
-
-## 🔁 Idempotência Real
-
-Garantida por **UNIQUE KEY pan_hash (pan_hash)**.
-
-Impacto:
-
-* Mesmo cartão nunca será inserido duas vezes
-* Reprocessar o mesmo arquivo não cria duplicatas
-* Sistema tolerante a reenvio
-* Sem depender de lógica na aplicação. O banco é a fonte da verdade
+* **id binary(16)** → compact UUID, better performance than varchar(36), smaller index → less IO
+* **pan_hash binary(32)** → SHA-256, used as logical key, allows secure comparison without exposing PAN
+* **pan_enc varbinary** → stores encrypted PAN (AES-GCM), ensures confidentiality, allows future decryption
+* **pan_iv** → required for authenticated encryption (AES-GCM), ensures per-record security
 
 ---
 
-## 🚫 Proteção contra duplicidade
+## 🔁 True Idempotency
 
-Uso de **INSERT IGNORE** com índice único:
+Ensured by **UNIQUE KEY pan_hash (pan_hash)**.
 
-* Inserção duplicada → ignorada
-* Nenhuma exception desnecessária
-* Batch não é interrompido
+Impact:
 
-Resultado: alta resiliência e processamento contínuo.
+* The same card is never inserted twice
+* Reprocessing the same file does not create duplicates
+* System tolerant to retries
+* Does not rely on application logic; database is the source of truth
 
 ---
 
-## 🚀 Boa Performance de Escrita
+## 🚫 Duplicate Protection
+
+Uses **INSERT IGNORE** with unique index:
+
+* Duplicate insertion → ignored
+* No unnecessary exceptions
+* Batch processing not interrupted
+
+Result: high resilience, continuous processing.
+
+---
+
+## 🚀 High Write Performance
 
 1. **Batch Insert** → `jdbcTemplate.batchUpdate(...)`
 
-    * Reduz round trips ao banco
-    * Reduz overhead de transação
-    * Melhor throughput
+    * Reduces round trips to database
+    * Reduces transaction overhead
+    * Higher throughput
 
-2. **Transação por lote** → `TransactionTemplate` por batch
+2. **Batch Transaction** → `TransactionTemplate` per batch
 
-    * Evita transação gigante
-    * Reduz lock time
-    * Melhor uso de memória
+    * Prevents giant transactions
+    * Reduces lock time
+    * Better memory usage
 
-3. **Índice único enxuto** → apenas em `pan_hash`
+3. **Lean unique index** → only on `pan_hash`
 
-    * Menos custo de escrita
-    * Menos manutenção de B-Tree
-    * Melhor desempenho geral
+    * Lower write cost
+    * Less B-Tree maintenance
+    * Better overall performance
 
 ---
 
-## 🔎 Boa Indexação para Lookup
+## 🔎 Efficient Lookup Indexing
 
-Lookup feito por:
+Lookup performed by:
 
 ```sql
 WHERE pan_hash = ?
 ```
 
-* O `pan_hash` é **UNIQUE** → busca O(log n), índice usado diretamente, sem full scan
-* **Nunca usar função na coluna** (ex: HEX, CAST, etc) → quebraria uso do índice
+* `pan_hash` is **UNIQUE** → O(log n) lookup, index used directly, no full scan
+* **Never use functions on the column** (e.g., HEX, CAST) → would break index usage
 
 ---
 
-## 🧠 Parsing Resiliente
+## 🧠 Resilient Parsing
 
-* Extração de PAN baseada em regex
-* Motivo: arquivos podem variar em padding, comentários podem existir
-* Resultado: parser robusto, menos risco de falha em produção
-
----
-
-## 🔒 Segurança
-
-* Nunca armazenar PAN em texto puro
-* Hash para comparação
-* Criptografia para confidencialidade
-* Serviço de criptografia isolado
-
-Permite conformidade com PCI-DSS e boas práticas de segurança.
+* PAN extraction based on regex
+* Reason: files may vary in padding, comments may exist
+* Result: robust parser, lower risk of production failure
 
 ---
 
-## 📝 Rotas da API
+## 🔒 Security
 
-1. **Criar cartão (POST /cards)**
+* Never store PAN in plaintext
+* Hash for comparison
+* Encryption for confidentiality
+* Isolated crypto service
+
+Allows PCI-DSS compliance and security best practices.
+
+---
+
+## 📝 API Routes
+
+1. **Create Card (POST /cards)**
 
 ```http
 POST /cards
@@ -226,40 +222,40 @@ Content-Type: application/json
 }
 ```
 
-* Cria um cartão novo, usando hash e criptografia AES-GCM
-* Retorna `201 Created` e `id` do cartão
-* Idempotente: se o cartão já existe, retorna o mesmo `id` sem criar duplicata
+* Creates a new card using hash and AES-GCM encryption
+* Returns `201 Created` and card `id`
+* Idempotent: if the card exists, returns the same `id` without creating duplicates
 
 ---
 
-2. **Consultar cartão por PAN (GET /cards?pan=...)**
+2. **Lookup Card by PAN (GET /cards?pan=...)**
 
 ```http
 GET /cards?pan=1234567890123456
 ```
 
-* Consulta eficiente via índice `pan_hash`
-* Retorna detalhes do cartão sem expor o PAN em texto puro
+* Efficient lookup using `pan_hash` index
+* Returns card details without exposing PAN in plaintext
 
 ---
 
-3. **Importar cartões em lote (POST /cards/import)**
+3. **Batch Import Cards (POST /cards/import)**
 
 ```http
 POST /cards/import
 Content-Type: multipart/form-data
 ```
 
-* Recebe arquivo CSV/JSON de cartões
-* Processamento em batch, streaming de arquivo para memória mínima
-* Idempotente e tolerante a duplicatas
-* Retorna resumo: total, inseridos, duplicados, inválidos
+* Receives CSV/JSON file of cards
+* Batch processing with minimal memory footprint (streaming)
+* Idempotent, tolerant to duplicates
+* Returns summary: total, inserted, duplicates, invalid
 
 ---
 
-## 📊 Resultado do Import
+## 📊 Import Result
 
-Exemplo real:
+Example:
 
 ```json
 {
@@ -272,40 +268,40 @@ Exemplo real:
 
 ---
 
-## 🧩 Escalabilidade
+## 🧩 Scalability
 
-* Streaming de arquivos → não carrega tudo na memória
-* Batch configurável (`BATCH_SIZE`)
-* Banco garante unicidade
-* Índices enxutos → milhões de registros processáveis
-* Ajustes possíveis: batch size, pool de conexões, InnoDB
-
----
-
-## 📈 Pontos Fortes
-
-✔ Idempotente ✔ Segura ✔ Performática ✔ Resiliente a arquivo imperfeito ✔ Estruturalmente correta ✔ Banco garantindo consistência ✔ Arquitetura limpa
+* File streaming → avoids loading entire file in memory
+* Configurable batch (`BATCH_SIZE`)
+* Database ensures uniqueness
+* Lean indices → millions of records processable
+* Adjustable: batch size, connection pool, InnoDB settings
 
 ---
 
-## 📌 Possíveis Evoluções
+## 📈 Strengths
 
-* Import assíncrono (fila + worker)
-* Métricas (Micrometer / Prometheus)
+✔ Idempotent ✔ Secure ✔ High-performance ✔ Resilient to imperfect files ✔ Structurally correct ✔ Database ensures consistency ✔ Clean architecture
+
+---
+
+## 📌 Possible Evolutions
+
+* Asynchronous import (queue + worker)
+* Metrics (Micrometer / Prometheus)
 * Rate limiting
-* Dead-letter para arquivos inválidos
-* Auditoria de importação
+* Dead-letter for invalid files
+* Import audit
 
 ---
 
-## Conclusão
+## Conclusion
 
-* Segurança de dados sensíveis
-* Integridade
-* Performance de escrita
-* Simplicidade estrutural
-* Escalabilidade real
+* Sensitive data security
+* Data integrity
+* Write performance
+* Structural simplicity
+* Real scalability
 
-Banco garante consistência. Aplicação garante segurança. Arquitetura sólida para ambiente produtivo.
+Database ensures consistency. Application ensures security. Solid architecture for production-ready environments.
 
 ---
