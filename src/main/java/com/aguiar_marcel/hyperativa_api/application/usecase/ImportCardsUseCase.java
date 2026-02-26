@@ -2,6 +2,9 @@ package com.aguiar_marcel.hyperativa_api.application.usecase;
 
 import com.aguiar_marcel.hyperativa_api.adapters.out.persistence.CardBatchRepository;
 import com.aguiar_marcel.hyperativa_api.application.port.CardCryptoService;
+import com.aguiar_marcel.hyperativa_api.infrastructure.messaging.sqs.CardImportQueueProducer;
+import com.aguiar_marcel.hyperativa_api.infrastructure.messaging.sqs.dto.CardImportMessage;
+import com.aguiar_marcel.hyperativa_api.infrastructure.messaging.sqs.dto.CardRecordMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -11,6 +14,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,29 +22,28 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ImportCardsUseCase {
 
-    private static final int BATCH_SIZE = 1000;
+    private static final int MESSAGE_RECORDS = 200;
 
     private final CardBatchRepository batchRepository;
     private final CardCryptoService crypto;
     private final TransactionTemplate txTemplate;
+    private final CardImportQueueProducer producer;
 
-    public ImportResult execute(MultipartFile file) throws Exception {
+    public ImportAccepted execute(MultipartFile file) throws Exception {
+
+        String importId = UUID.randomUUID().toString();
 
         int total = 0;
         int invalid = 0;
-        int duplicates = 0;
-        int inserted = 0;
+        int enqueuedBatches = 0;
+        int batchIndex = 0;
 
-        List<CardBatchRepository.CardBatchRecord> batch =
-                new ArrayList<>(BATCH_SIZE);
+        List<CardRecordMessage> msgBatch = new ArrayList<>(MESSAGE_RECORDS);
 
         try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(
-                        file.getInputStream(),
-                        StandardCharsets.UTF_8))) {
+                new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
 
             String line;
-
             while ((line = br.readLine()) != null) {
 
                 total++;
@@ -59,49 +62,29 @@ public class ImportCardsUseCase {
                 byte[] hash = crypto.hmacSha256(pan);
                 var encrypted = crypto.encrypt(pan);
 
-                batch.add(new CardBatchRepository.CardBatchRecord(
-                        UUID.randomUUID(),
-                        hash,
-                        encrypted.cipherText(),
-                        encrypted.iv()
-                ));
+                var record = new CardRecordMessage(
+                        UUID.randomUUID().toString(),
+                        Base64.getEncoder().encodeToString(hash),
+                        Base64.getEncoder().encodeToString(encrypted.cipherText()),
+                        Base64.getEncoder().encodeToString(encrypted.iv())
+                );
 
-                if (batch.size() == BATCH_SIZE) {
-                    int[] results = flushBatch(batch);
-                    int[] counts = countResults(results);
-                    inserted += counts[0];
-                    duplicates += counts[1];
-                    batch.clear();
+                msgBatch.add(record);
+
+                if (msgBatch.size() == MESSAGE_RECORDS) {
+                    producer.send(new CardImportMessage(importId, batchIndex++, msgBatch));
+                    enqueuedBatches++;
+                    msgBatch = new ArrayList<>(MESSAGE_RECORDS);
                 }
             }
         }
 
-        if (!batch.isEmpty()) {
-            int[] results = flushBatch(batch);
-            int[] counts = countResults(results);
-            inserted += counts[0];
-            duplicates += counts[1];
+        if (!msgBatch.isEmpty()) {
+            producer.send(new CardImportMessage(importId, batchIndex, msgBatch));
+            enqueuedBatches++;
         }
 
-        return new ImportResult(total, inserted, duplicates, invalid);
-    }
-
-    private int[] flushBatch(List<CardBatchRepository.CardBatchRecord> batch) {
-        return txTemplate.execute(status ->
-                batchRepository.batchInsert(batch)
-        );
-    }
-
-    private int[] countResults(int[] results) {
-        int inserted = 0;
-        int duplicates = 0;
-
-        for (int r : results) {
-            if (r > 0) inserted++;
-            else duplicates++;
-        }
-
-        return new int[]{inserted, duplicates};
+        return new ImportAccepted(importId, total, invalid, enqueuedBatches);
     }
 
     private String extractPanSafe(String line) {
@@ -120,7 +103,6 @@ public class ImportCardsUseCase {
         }
 
         String panPart = line.substring(7).trim();
-
         String pan = panPart.replaceAll("[^0-9]", "");
 
         if (pan.length() < 13 || pan.length() > 19) {
@@ -130,30 +112,10 @@ public class ImportCardsUseCase {
         return pan;
     }
 
-    private boolean isValidLuhn(String pan) {
-
-        int sum = 0;
-        boolean alternate = false;
-
-        for (int i = pan.length() - 1; i >= 0; i--) {
-            int n = pan.charAt(i) - '0';
-
-            if (alternate) {
-                n *= 2;
-                if (n > 9) n -= 9;
-            }
-
-            sum += n;
-            alternate = !alternate;
-        }
-
-        return (sum % 10 == 0);
-    }
-
-    public record ImportResult(
+    public record ImportAccepted(
+            String importId,
             int totalLines,
-            int inserted,
-            int duplicates,
-            int invalid
+            int invalid,
+            int enqueuedBatches
     ) {}
 }

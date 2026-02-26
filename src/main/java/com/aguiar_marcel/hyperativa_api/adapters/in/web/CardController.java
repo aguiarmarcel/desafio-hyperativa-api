@@ -44,18 +44,15 @@ public class CardController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    @PostMapping(
-            value = "/import",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
-    public ResponseEntity<ImportCardsUseCase.ImportResult> importFile(
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ImportCardsUseCase.ImportAccepted> importFile(
             @RequestParam("file") MultipartFile file
     ) throws Exception {
 
-        var result = importUseCase.execute(file);
+        var accepted = importUseCase.execute(file);
 
         return ResponseEntity
                 .status(HttpStatus.ACCEPTED)
-                .body(result);
+                .body(accepted);
     }
 }
